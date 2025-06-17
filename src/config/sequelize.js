@@ -1,9 +1,10 @@
 const {Sequelize} = require('sequelize');
 require('dotenv').config();
+console.log('--- Sequelize config file loaded ---'); // <-- ADD THIS LINE
 
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
     dialect:'postgres',
-    logging:false
+    logging:console.log
 });
 
 const connectDB = async () => {
