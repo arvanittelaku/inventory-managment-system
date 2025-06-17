@@ -2,33 +2,41 @@ const {DataTypes} = require('sequelize');
 const {sequelize} = require('../config/sequelize');
 
 
-const Product = sequelize.define('Product' , {
-    productId:{
-        type:DataTypes.INTEGER,
-        primaryKey:true,
-        autoIncrement:true,
-        allowNull:false
+const Product = sequelize.define('Product', {
+    product_id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true,
+        allowNull: false
     },
     name: {
-        type:DataTypes.STRING(255),
-        allowNull:false,
-        unique:true
+        type: DataTypes.STRING(255),
+        allowNull: false
     },
-    description:{
-        type:DataTypes.TEXT
+    description: {
+        type: DataTypes.TEXT
     },
     price: {
-        type:DataTypes.DECIMAL(10,2),
-        allowNull:false
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false
     },
     quantity: {
-        type:DataTypes.INTEGER,
-        allowNull:false,
-        defaultValue:0
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
     },
-    category_id: { //this column is going to be our foreign key
-        type:DataTypes.INTEGER,
-        allowNull:true //can be null if a product doesnt have a category or  the category is deleted
+    category_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true // Can be null if category is deleted
+    },
+    // NEW COLUMNS FOR USER ASSOCIATION
+    created_by_user_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true, 
+    },
+    updated_by_user_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true, // Can be null for initial products or if user is deleted
     }
 },{
     tableName:'products',
