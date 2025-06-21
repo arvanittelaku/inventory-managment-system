@@ -1,12 +1,12 @@
 const express = require('express');
-const productRouter = express.Router(); //we create a new router object
+const router = express.Router(); //we create a new router object
 const productController = require('../controllers/productController');//we import the product controller
 
 //we define routes and link them to the controller functions
-productRouter.get('/',productController.getAllProducts);
-productRouter.get('/:id',productController.getProductById);
-productRouter.post('/',productController.createProduct);
-productRouter.put('/:id',productController.updateProductById);
-productRouter.delete('/:id',productController.deleteProductById);
+router.get('/',productController.getAllProducts);
+router.get('/:id',productController.getProductById);
+router.post('/',productController.createProduct);
+router.put('/:id',productController.updateProductById);
+router.delete('/:id',productController.deleteProductById);
 
-module.exports = productRouter; //we export the router so we can import from other files
+module.exports = router; //we export the router so we can import from other files

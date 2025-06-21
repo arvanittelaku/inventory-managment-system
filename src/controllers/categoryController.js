@@ -41,7 +41,7 @@ exports.createCategory = async (req,res) => {
 exports.updateCategoryById = async (req,res) => {
     try{
         const [updatedRows] = await Category.update(req.body,{
-            where: {category_id: req.params.id};
+            where: {category_id: req.params.id}
         });
         if(updatedRows > 0) {
             const updatedCategory = await Category.findByPk(req.params.id);
