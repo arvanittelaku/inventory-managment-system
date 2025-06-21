@@ -12,9 +12,8 @@ const PORT = process.env.PORT || 5000;
 //middleware to parse json request bodies 
 app.use(express.json());
 
-//connect to db and sync models
+//connect to db
 sequelizeConfig.connectDB();
-sequelizeConfig.syncModels();
 
 //mount routes
 app.use('/api/v1/products', productRoutes);
@@ -32,4 +31,3 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server running on port: ${PORT}`);
 });
-

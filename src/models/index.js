@@ -36,6 +36,30 @@ User.hasMany(Product,{
     foreignKey:'updated_by_user_id'
 });
 
+// Category associations
+Category.belongsTo(User, {
+    as: 'CreatedBy',
+    foreignKey: 'created_by_user_id',
+    onDelete: 'SET NULL'
+});
+
+Category.belongsTo(User, {
+    as: 'UpdatedBy',
+    foreignKey: 'updated_by_user_id',
+    onDelete: 'SET NULL'
+});
+
+User.hasMany(Category, {
+    as: 'CreatedCategories',
+    foreignKey: 'created_by_user_id'
+});
+
+User.hasMany(Category, {
+    as: 'UpdatedCategories',
+    foreignKey: 'updated_by_user_id'
+});
+
+
 module.exports = {
     sequelize,
     User,
