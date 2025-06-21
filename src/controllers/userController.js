@@ -1,131 +1,126 @@
-const { User } = require('../models') //we import the user model
-const bcrypt = require('bcryptjs'); //bcrypt for hashing password
-const jwt = require('jsonwebtoken'); //for creating jwts
+const { User } = require('../models');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { Op } = require('sequelize');
+//helper for generating token
+const generateToken = (user) => {
+    return jwt.sign(
+        { user: { id: user.user_id, role: user.role } },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+    );
+};
 
-//method for registering user 
-exports.registerUser = async (req,res) => {
-    const {username,email,password,role} = req.body;
+//register method
+exports.registerUser = async (req, res) => {
+    const { username, email, password, role } = req.body;
 
     try {
-        //check if the user already exists by email or username
-        let existingUser = await User.findOne({ where: { username } });
-        if (existingUser) {
-            return res.status(400).json({ message: 'Username already taken' });
+        let user = await User.findOne({ where: { email } });
+        if (user) {
+            return res.status(400).json({ message: 'User with that email already exists' });
         }
 
-        existingUser = await User.findOne({where: {email}} );
-        if(existingUser) {
-            return res.status(400).json({ message: 'Email already registered' });
+        user = await User.findOne({ where: { username } });
+        if (user) {
+            return res.status(400).json({ message: 'User with that username already exists' });
         }
 
-        //hash the password
         const salt = await bcrypt.genSalt(10);
-        const password_hash = await bcrypt.hash(password,salt);
+        const password_hash = await bcrypt.hash(password, salt);
 
-        //create the user in the db
-        const newUser = await User.create({
+        user = await User.create({
             username,
             email,
             password_hash,
-            role:role || 'user'
+            role: role || 'user'
         });
 
-        //generate jwt token
-        const payload = {
-            user:{
-                id:newUser.user_id,
-                role:newUser.role
-            }
-        };
+        const token = generateToken(user);
 
-        jwt.sign(
-            payload,
-            process.env.JWT_SECRET,
-            {expiresIn:'1h'},
-            (err,token) => {
-                if(err) throw err;
-                res.status(201).json({
-                    message: 'User registered successfully',
-                    token, //send the token back
-                    user:{
-                         id: newUser.user_id,
-                        username: newUser.username,
-                        email: newUser.email,
-                        role: newUser.role
-                    } 
-                });
+        res.status(201).json({
+            message: 'User registered successfully',
+            token,
+            user: {
+                id: user.user_id,
+                username: user.username,
+                email: user.email,
+                role: user.role
             }
-        );
-    }catch(error) {
-        console.error('Error registering user: ',error)
-        res.status(500).json({ message: 'Server error during registration', error: error.message });
+        });
+
+    } catch (error) {
+        console.error('Error during registerUser:', error);
+        res.status(500).json({ message: 'Error registering user', error: error.message });
     }
 };
 
-//method for logging in 
-exports.loginUser = async (req,res) => {
+//login method
+exports.loginUser = async (req, res) => {
     const { username, password } = req.body;
 
     try {
-        //check if user exists
-        const user = await User.findOne({where: {username}});
-        if(!user) {
-            return res.status(400).json({message: 'Invalid credentials!'});
-        }
-        //compare provided password with hashed password in db
-        const isMatch = await bcrypt.compare(password,user.password_hash);
-        if(!isMatch) {
-            return res.status(400).json({message: 'Invalid credentials!'});
+        const user = await User.findOne({ where: { username } });
+        if (!user) {
+            return res.status(400).json({ message: 'Invalid credentials' });
         }
 
-        //generate token
-        const payload = {
+        const isMatch = await bcrypt.compare(password, user.password_hash);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Invalid credentials' });
+        }
+
+        const token = generateToken(user);
+
+        res.status(200).json({
+            message: 'Logged in successfully',
+            token,
             user: {
                 id: user.user_id,
-                role:user.role
+                username: user.username,
+                email: user.email,
+                role: user.role
             }
-        };
+        });
 
-        jwt.sign(
-            payload,
-            process.env.JWT_SECRET,
-            {expiresIn: '1h'},
-            (err,token) => {
-                if(err) throw err;
-                res.status(200).json({
-                    message: 'Logged in successfully!',
-                    token,
-                    user: {
-                        id:user.user_id,
-                        username: user.username,
-                        email:user.email,
-                        role:user.role
-                    }
-                });
-            }
-        );
-    }catch(error) {
-        console.error('Error logging in user:', error);
-        res.status(500).json({message: 'Server error during login',error:error.message})
+    } catch (error) {
+        console.error('Error during loginUser:', error);
+        res.status(500).json({ message: 'Error logging in', error: error.message });
     }
 };
 
-//method for getting the current logged in user's profile
-
-exports.getMe = async (req,res) => {
+exports.getMe = async (req, res) => {
     try {
         const user = await User.findByPk(req.user.id, {
-            attributes:{exclude: ['password_hash']} //we exclude the password from the response
+            attributes: { exclude: ['password_hash'] }
         });
 
-        if(!user) {
-            return res.status(404).json({message: 'User not found'});
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
         }
 
         res.status(200).json(user);
-    }catch(error) {
+    } catch (error) {
         console.error('Error fetching user profile:', error);
-        res.status(500).json({message: 'Server error fetching user profile', error:error.message});
+        res.status(500).json({ message: 'Error fetching user profile', error: error.message });
     }
 };
 
+
+//get all users for admin user
+exports.getAllUsers = async (req, res) => {
+    try {
+        const users = await User.findAll({
+            where: {
+                user_id: {
+                    [Op.ne]: req.user.id //exlude the current user whose id matches req.user.id
+                }
+            },
+            attributes: {exclude: ['password_hash']}
+        });
+        res.status(200).json(users);
+    }catch(error){
+        console.error('Error fetching all users:',error);
+        res.status(500).json({message: 'Error fetching users',error:error.message});
+    }
+};

@@ -2,12 +2,20 @@ const { Product, Category, User } = require('../models') //import models
 
 //get all the products
 exports.getAllProducts = async (req,res) => {
-    try{
+      try{
         const products = await Product.findAll({
             include: [
-                {model:Category}, //include category data
-                {model:User,as:'CreatedBy'}, //include user who created the product
-                {model:User,as:'UpdatedBy'}//include user who updated the product
+                {model:Category},
+                {
+                    model:User,
+                    as:'CreatedBy',
+                    attributes: { exclude: ['password_hash'] } //exlude the password hashed
+                },
+                {
+                    model:User,
+                    as:'UpdatedBy',
+                    attributes: { exclude: ['password_hash'] } //exlude the password hashed
+                }
             ]
         });
         res.status(200).json(products);
@@ -21,11 +29,19 @@ exports.getAllProducts = async (req,res) => {
 exports.getProductById = async (req,res) => {
     try {
        const product = await Product.findByPk(req.params.id, {
-        include: [
-            {model:Category},
-            {model:User,as:'CreatedBy'},
-            {model:User,as:'UpdatedBy'},
-        ]
+       include: [
+                {model:Category},
+                {
+                    model:User,
+                    as:'CreatedBy',
+                    attributes: { exclude: ['password_hash'] } //exlude the password hashed
+                },
+                {
+                    model:User,
+                    as:'UpdatedBy',
+                    attributes: { exclude: ['password_hash'] } //exlude the password hashed
+                }
+            ]
        });
        if(product) {
         res.status(200).json(product);
@@ -40,36 +56,55 @@ exports.getProductById = async (req,res) => {
 
 //update product by id
 exports.updateProductById = async (req,res) => {
-    try {
-        const [updatedRows] = Product.update(req.body, {
-            where:{product_id : req.params.id}
+   try {
+    const updatedProductData = {
+        ...req.body, //take all the fields from the body
+        updated_by_user_id: req.user.id
+    };
+    const updatedRows = await Product.update(updatedProductData, {
+        where:{product_id:req.params.id}
+    });
+
+    if(updatedRows > 0) {
+        const updatedProduct = await Product.findByPk(req.params.id, {
+            include: [
+                {model:Category},
+                {
+                    model:User,
+                    as:'CreatedBy',
+                    attributes: { exclude: ['password_hash'] } //exlude the password hashed
+                },
+                {
+                    model:User,
+                    as:'UpdatedBy',
+                    attributes: { exclude: ['password_hash'] } //exlude the password hashed
+                }
+            ]
         });
-        if(updatedRows > 0) {
-            const updatedProduct = await Product.findByPk(req.params.id, {
-                include: [
-                    {model:Category},
-                    {model:User, as:'CreatedBy'},
-                    {model:User, as:'UpdatedBy'},
-                ]
-            });
-            res.status(200).json(updatedProduct);
-        }else {
-            res.status(404).json({message:'Product not found!'});
-        }
-    }catch(error) {
-        console.error(error);
-        res.status(400).json({message: 'Error updating the product',error:error.message})  
+        res.status(200).json(updatedProduct);
+    }else{
+        res.status(404).json({message: 'Product not found!'});
     }
+   }catch(error) {
+    console.error(error);
+    res.status(400).json({message: 'Error updating the product',error:error.message})
+   }
 };
 
 //create new product 
 exports.createProduct = async (req,res) => {
     try {
-        const newProduct = await Product.create(req.body);
+        const newProductData = {
+            ...req.body, //take all the fields from the body
+            created_by_user_id:req.user.id,
+            updated_by_user_id:req.user.id
+        };
+
+        const newProduct = await Product.create(newProductData);
         res.status(201).json(newProduct);
     }catch(error) {
         console.error('Error creating product:', error);
-        res.status(400).json({message:'Error creating product!',error:error.message});
+        res.status(400).json({message: 'Error creating product!',error:error.message});
     }
 };
 
