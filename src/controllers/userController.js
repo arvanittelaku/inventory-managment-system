@@ -2,6 +2,8 @@ const { User } = require('../models');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
+const { BadRequestError, AppError, UnauthorizedError } = require('../utils/appError');
+const e = require('express');
 //helper for generating token
 const generateToken = (user) => {
     return jwt.sign(
@@ -12,115 +14,121 @@ const generateToken = (user) => {
 };
 
 //register method
-exports.registerUser = async (req, res) => {
-    const { username, email, password, role } = req.body;
+exports.registerUser = async (req, res,next) => {
+    const { username, email, password } = req.body;
 
     try {
-        let user = await User.findOne({ where: { email } });
-        if (user) {
-            return res.status(400).json({ message: 'User with that email already exists' });
+        if(!username || !email || !password) {
+            return next(new BadRequestError('Please provide username, email and password'));
+        }
+        //check if user already exists by email
+        let userExists = User.findOne({ where: {email}});
+        if(userExists) {
+            return next(new BadRequestError('Email already taken!'));
+        }
+        //check if user exists by username
+        userExists = User.findOne({where: {username}});
+        if(userExists) {
+            return next(new BadRequestError('Username already taken!'));
         }
 
-        user = await User.findOne({ where: { username } });
-        if (user) {
-            return res.status(400).json({ message: 'User with that username already exists' });
-        }
-
+        //hash the password
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash(password, salt);
 
-        user = await User.create({
+        const newUser = await User.create({
             username,
             email,
             password_hash,
-            role: role || 'user'
+            role:'user' //default 
         });
 
-        const token = generateToken(user);
+        const token = generateToken(newUser.user_id);
 
         res.status(201).json({
-            message: 'User registered successfully',
+            status: 'success',
             token,
-            user: {
-                id: user.user_id,
-                username: user.username,
-                email: user.email,
-                role: user.role
+              user: {
+                user_id: newUser.user_id,
+                username: newUser.username,
+                email: newUser.email,
+                role: newUser.role
             }
         });
+    }catch(error) {
 
-    } catch (error) {
-        console.error('Error during registerUser:', error);
-        res.status(500).json({ message: 'Error registering user', error: error.message });
+        next(new AppError('Failed to register user.' + error.message, 500));
     }
 };
 
 //login method
-exports.loginUser = async (req, res) => {
+exports.loginUser = async (req, res, next) => {
     const { username, password } = req.body;
 
     try {
-        const user = await User.findOne({ where: { username } });
-        if (!user) {
-            return res.status(400).json({ message: 'Invalid credentials' });
+        if(!username || !password) {
+            return next(new BadRequestError('Please provide username and password.'));
+        }
+        const user = await User.findOne({where: {username}});
+
+        if(!user) {
+            return next(new UnauthorizedError('Invalid credentials.'))
         }
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
-        if (!isMatch) {
-            return res.status(400).json({ message: 'Invalid credentials' });
+        if(!isMatch) {
+            return next(new BadRequestError('Invalid password.'));
         }
 
-        const token = generateToken(user);
-
+        const token = generateToken(user.user_id);
         res.status(200).json({
-            message: 'Logged in successfully',
+            status: 'success',
             token,
             user: {
-                id: user.user_id,
+                user_id: user.user_id,
                 username: user.username,
                 email: user.email,
                 role: user.role
             }
         });
-
-    } catch (error) {
-        console.error('Error during loginUser:', error);
-        res.status(500).json({ message: 'Error logging in', error: error.message });
+    }catch(error) {
+        next(new AppError('Failed to log in. ' + error.message + 500));
     }
 };
 
-exports.getMe = async (req, res) => {
+exports.getMe = async (req, res, next) => {
     try {
-        const user = await User.findByPk(req.user.id, {
-            attributes: { exclude: ['password_hash'] }
-        });
-
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+       
+        if (!req.user) {
+            return next(new UnauthorizedError('User not authenticated.'));
         }
 
-        res.status(200).json(user);
+        res.status(200).json({
+            status: 'success',
+            user: {
+                user_id: req.user.user_id,
+                username: req.user.username,
+                email: req.user.email,
+                role: req.user.role
+            }
+        });
     } catch (error) {
-        console.error('Error fetching user profile:', error);
-        res.status(500).json({ message: 'Error fetching user profile', error: error.message });
+        next(new AppError('Failed to fetch user profile. ' + error.message, 500));
     }
 };
 
-
-//get all users for admin user
-exports.getAllUsers = async (req, res) => {
+//get all users for admin
+exports.getAllUsers = async (req, res, next) => { 
     try {
         const users = await User.findAll({
-            where: {
-                user_id: {
-                    [Op.ne]: req.user.id //exlude the current user whose id matches req.user.id
-                }
-            },
-            attributes: {exclude: ['password_hash']}
+            attributes: { exclude: ['password_hash'] }
         });
-        res.status(200).json(users);
-    }catch(error){
-        console.error('Error fetching all users:',error);
-        res.status(500).json({message: 'Error fetching users',error:error.message});
+        res.status(200).json({
+            status: 'success',
+            results: users.length,
+            users
+        });
+    } catch (error) {
+        next(new AppError('Failed to fetch users. ' + error.message, 500));
     }
 };
