@@ -5,9 +5,9 @@ const { Op } = require('sequelize');
 const { BadRequestError, AppError, UnauthorizedError } = require('../utils/appError');
 const e = require('express');
 //helper for generating token
-const generateToken = (user) => {
+const generateToken = (id) => {
     return jwt.sign(
-        { user: { id: user.user_id, role: user.role } },
+        { id },
         process.env.JWT_SECRET,
         { expiresIn: '1h' }
     );

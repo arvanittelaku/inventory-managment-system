@@ -1,37 +1,41 @@
-const jwt = require('jsonwebtoken'); 
-
-const authMiddleware = (req,res,next) => {
-    //get the token from the header
+const jwt = require('jsonwebtoken');
+const { User } = require('../models'); 
+const { UnauthorizedError, AppError } = require('../utils/appError'); 
+const authMiddleware = async (req, res, next) => { 
     let token;
-    if(req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
         try {
-            //the format expected is like 'Bearer Token_String'
-            token = req.headers.authorization.split(' ')[1]; //we get only the token
-        }catch(error){
-            console.error('Error parsing from the header:',error);
-            return res.status(401).json({message: 'Not authorized, token format invalid'});
+            token = req.headers.authorization.split(' ')[1];
+        } catch (error) {
+            console.error('Error parsing token from header:', error);
+            return next(new UnauthorizedError('Not authorized, token format invalid.')); 
         }
     }
-    //check if the token exists
-    if(!token) {
-        return res.status(401).json({message: 'Not authorized, no token' });
+
+    if (!token) {
+        return next(new UnauthorizedError('Not authorized, no token provided.')); 
     }
 
     try {
-        //verify token with jwt.verify - takes the token string and the secret key
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findByPk(decoded.id, {
+            attributes: { exclude: ['password_hash'] }
+        });
 
-        //atach the decoded user payload to the request object
-        req.user = decoded.user; //req.user will have id and role
-
-        next(); //call next to pass control to the next middleware or controller
-    }catch(error) {
-        console.error('Token verification failed:',error);
-        //token invalid or expired
-        if(error.name = 'TokenExpiredError') {
-            return res.status(401).json({message: 'Not authorized,token expired'});
+        if (!user) {
+            return next(new UnauthorizedError('The user belonging to this token no longer exists.'));
         }
-        return res.status(401).json({message: 'Not authorized,token failed!'});
+
+        req.user = user; 
+
+        next();
+    } catch (error) {
+        console.error('Token verification failed:', error);
+        if (error.name === 'TokenExpiredError') { 
+            return next(new UnauthorizedError('Not authorized, token expired.')); 
+        }
+        return next(new UnauthorizedError('Not authorized, token invalid.')); 
     }
 };
 

@@ -1,127 +1,182 @@
 // src/controllers/categoryController.js
 const { Category, User } = require('../models'); // Import User model
+const { NotFoundError, BadRequestError, ForbiddenError, AppError } = require('../utils/appError');
 
 // Get all categories
-exports.getAllCategories = async (req, res) => {
-    try {
-        const categories = await Category.findAll({
-            include: [
-                {
-                    model: User,
-                    as: 'CreatedBy',
-                    attributes: { exclude: ['password_hash'] } // Exclude password_hash
-                },
-                {
-                    model: User,
-                    as: 'UpdatedBy',
-                    attributes: { exclude: ['password_hash'] } // Exclude password_hash
-                }
-            ]
-        });
-        res.status(200).json(categories);
-    } catch (error) {
-        console.error('Error fetching categories:', error);
-        res.status(500).json({ message: 'Error fetching categories', error: error.message });
-    }
+exports.getAllCategories = async (req, res, next) => {
+    try {
+        const categories = await Category.findAll({
+            include: [
+                {
+                    model: User,
+                    as: 'CreatedBy',
+                    attributes: { exclude: ['password_hash', 'passwordChangedAt', 'passwordResetToken', 'passwordResetExpires'] } // Exclude password_hash
+                },
+                {
+                    model: User,
+                    as: 'UpdatedBy',
+                    attributes: { exclude: ['password_hash', 'passwordChangedAt', 'passwordResetToken', 'passwordResetExpires'] } // Exclude password_hash
+                }
+            ]
+        });
+        res.status(200).json({
+            status: 'success',
+            results: categories.length,
+            categories,
+        });
+    } catch (error) {
+        next(new AppError('Failed to fetch categories. ' + error.message, 500));
+    }
 };
 
 // Get category by ID
-exports.getCategoryById = async (req, res) => {
-    try {
-        const category = await Category.findByPk(req.params.id, {
-            include: [
-                {
-                    model: User,
-                    as: 'CreatedBy',
-                    attributes: { exclude: ['password_hash'] } // Exclude password_hash
-                },
-                {
-                    model: User,
-                    as: 'UpdatedBy',
-                    attributes: { exclude: ['password_hash'] } // Exclude password_hash
-                }
-            ]
-        });
-        if (category) {
-            res.status(200).json(category);
-        } else {
-            res.status(404).json({ message: 'Category not found!' });
-        }
-    } catch (error) {
-        console.error('Error fetching category by ID:', error);
-        res.status(500).json({ message: 'Error fetching category', error: error.message });
-    }
+exports.getCategoryById = async (req, res, next) => {
+    try {
+        const category = await Category.findByPk(req.params.id, {
+            include: [
+                {
+                    model: User,
+                    as: 'CreatedBy',
+                    attributes: { exclude: ['password_hash', 'passwordChangedAt', 'passwordResetToken', 'passwordResetExpires'] } // Exclude password_hash
+                },
+                {
+                    model: User,
+                    as: 'UpdatedBy',
+                    attributes: { exclude: ['password_hash', 'passwordChangedAt', 'passwordResetToken', 'passwordResetExpires'] } // Exclude password_hash
+                }
+            ]
+        });
+        if (!category) {
+            return next(new NotFoundError('Category not found!'));
+        }
+        res.status(200).json({
+            status: 'success',
+            category,
+        });
+    } catch (error) {
+        if (error.name === 'SequelizeInvalidUUIDError' || error.name === 'SequelizeDatabaseError') {
+            return next(new BadRequestError('Invalid category ID format.'));
+        }
+        next(new AppError('Failed to fetch category. ' + error.message, 500));
+    }
 };
 
 // Create new category
-exports.createCategory = async (req, res) => {
-    try {
-        // Automatically assign created_by_user_id and updated_by_user_id from the authenticated user
-        const newCategoryData = {
-            ...req.body, // Take 'name' and 'description' from the request body
-            created_by_user_id: req.user.id, // Set creator from authenticated user
-            updated_by_user_id: req.user.id  
-        };
+exports.createCategory = async (req, res, next) => {
+    try {
+        if (!req.user || !req.user.user_id) {
+            return next(new ForbiddenError('User not authenticated for creation.'));
+        }
+        const { name, description } = req.body;
 
-        const newCategory = await Category.create(newCategoryData);
-        res.status(201).json(newCategory); 
-    } catch (error) {
-        console.error('Error creating category:', error);
-        res.status(400).json({ message: 'Error creating category!', error: error.message });
-    }
+        if (!name) {
+            return next(new BadRequestError('Category name is required.'));
+        }
+
+        // Automatically assign created_by_user_id and updated_by_user_id from the authenticated user
+        const newCategoryData = {
+            ...req.body, // Take 'name' and 'description' from the request body
+            created_by_user_id: req.user.user_id, // Set creator from authenticated user
+            updated_by_user_id: req.user.user_id  
+        };
+
+        const newCategory = await Category.create(newCategoryData);
+        res.status(201).json({
+            status: 'success',
+            category: newCategory,
+        }); 
+    } catch (error) {
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            return next(new BadRequestError('Category with this name already exists.'));
+        }
+        if (error.name === 'SequelizeValidationError') {
+            const messages = error.errors.map(err => err.message);
+            return next(new BadRequestError(`Validation error: ${messages.join(', ')}`));
+        }
+        next(new AppError('Error creating category! ' + error.message, 500));
+    }
 };
 
 // Update category by ID
-exports.updateCategoryById = async (req, res) => {
-    try {
-        
-        const updatedCategoryData = {
-            ...req.body, // Take 'name' and 'description' from the request body
-            updated_by_user_id: req.user.id // Set updater to the user performing the update
-        };
+exports.updateCategoryById = async (req, res, next) => {
+    try {
+        if (!req.user || !req.user.user_id) {
+            return next(new ForbiddenError('User not authenticated for update.'));
+        }
+        const categoryId = req.params.id;
+        const { name, description } = req.body;
 
-        const [updatedRows] = await Category.update(updatedCategoryData, {
-            where: { category_id: req.params.id }
-        });
+        const category = await Category.findByPk(categoryId);
+        if (!category) {
+            return next(new NotFoundError('Category not found!'));
+        }
 
-        if (updatedRows > 0) {
-            const updatedCategory = await Category.findByPk(req.params.id, {
-                include: [
-                    {
-                        model: User,
-                        as: 'CreatedBy',
-                        attributes: { exclude: ['password_hash'] }
-                    },
-                    {
-                        model: User,
-                        as: 'UpdatedBy',
-                        attributes: { exclude: ['password_hash'] }
-                    }
-                ]
-            });
-            res.status(200).json(updatedCategory);
-        } else {
-            res.status(404).json({ message: 'Category not found!' });
-        }
-    } catch (error) {
-        console.error(error);
-        res.status(400).json({ message: 'Error updating the category', error: error.message });
-    }
+        // Ensure at least one field is provided for update
+        if (!name && !description) {
+            return next(new BadRequestError('Please provide at least a name or description to update.'));
+        }
+        
+        const updatedCategoryData = { 
+            name: name || category.name,
+            description: description || category.description,
+            updated_by_user_id: req.user.user_id // Set updater to the user performing the update 
+        }; 
+
+        await category.update(updatedCategoryData);
+
+        const updatedCategory = await Category.findByPk(req.params.id, { 
+            include: [ 
+                { 
+                    model: User, 
+                    as: 'CreatedBy', 
+                    attributes: { exclude: ['password_hash', 'passwordChangedAt', 'passwordResetToken', 'passwordResetExpires'] } 
+                }, 
+                { 
+                    model: User, 
+                    as: 'UpdatedBy', 
+                    attributes: { exclude: ['password_hash', 'passwordChangedAt', 'passwordResetToken', 'passwordResetExpires'] } 
+                } 
+            ] 
+        }); 
+        res.status(200).json({
+            status: 'success',
+            category: updatedCategory,
+        });
+    } catch (error) {
+        if (error.name === 'SequelizeInvalidUUIDError' || error.name === 'SequelizeDatabaseError') {
+            return next(new BadRequestError('Invalid category ID format.'));
+        }
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            return next(new BadRequestError('Category with this name already exists.'));
+        }
+        if (error.name === 'SequelizeValidationError') {
+            const messages = error.errors.map(err => err.message);
+            return next(new BadRequestError(`Validation error: ${messages.join(', ')}`));
+        }
+        next(new AppError('Error updating the category. ' + error.message, 500));
+    }
 };
 
 // Delete category by ID
-exports.deleteCategoryById = async (req, res) => {
-    try {
-        const deletedRows = await Category.destroy({
-            where: { category_id: req.params.id }
-        });
-        if (deletedRows > 0) {
-            res.status(204).send(); 
-        } else {
-            res.status(404).json({ message: 'Category not found!' });
-        }
-    } catch (error) {
-        console.error('Error deleting category:', error);
-        res.status(500).json({ message: 'Error deleting category', error: error.message });
-    }
+exports.deleteCategoryById = async (req, res, next) => {
+    try {
+        const categoryId = req.params.id;
+        const category = await Category.findByPk(categoryId); 
+
+        if (!category) {
+            return next(new NotFoundError('Category not found!'));
+        }
+
+        await category.destroy(); 
+
+        res.status(204).json({ //no content
+            status: 'success',
+            data: null
+        }); 
+    } catch (error) {
+        if (error.name === 'SequelizeInvalidUUIDError' || error.name === 'SequelizeDatabaseError') {
+            return next(new BadRequestError('Invalid category ID format.'));
+        }
+        next(new AppError('Failed to delete category. ' + error.message, 500));
+    }
 };
